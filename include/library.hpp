@@ -5,30 +5,23 @@
 #include <iostream>
 #include <string>
 #include <memory>
-#include <gtest/gtest.h>
-
-// ------------------------------
-// Абстрактные интерфейсы (должны быть реализованы)
-// ------------------------------
+#include <stdexcept>
 
 // Интерфейс для сервиса погоды
 class IWeatherService {
 public:
     virtual ~IWeatherService() = default;
-    virtual int getTemperature() const = 0; // TODO: реализовать в наследниках
+    virtual int getTemperature() const = 0;
 };
 
 // Интерфейс для адаптера
 class IWeatherAdapter {
 public:
     virtual ~IWeatherAdapter() = default;
-    virtual int getConvertedTemperature() const = 0; // TODO: реализовать
+    virtual int getConvertedTemperature() const = 0;
 };
 
-// ------------------------------
-// Внешние сервисы (неизменяемый код)
-// ------------------------------
-
+// Внешние сервисы
 class XmlWeatherService {
 public:
     virtual std::string getWeatherXml() const {
@@ -43,18 +36,30 @@ public:
     }
 };
 
-// ------------------------------
-// Ваш код ниже (реализуйте недостающие части)
-// ------------------------------
-
-// Адаптер: преобразует XmlWeatherService в IWeatherService
+// Адаптер для XmlWeatherService
 class XmlToJsonAdapter : public IWeatherService {
 public:
     XmlToJsonAdapter(const XmlWeatherService& service) : xmlService(service) {}
 
     int getTemperature() const override {
-        // TODO: распарсить XML и вернуть температуру
-        return 0; 
+        std::string xml = xmlService.getWeatherXml();
+        size_t start = xml.find("<temperature>");
+        if (start == std::string::npos) {
+            throw std::invalid_argument("Invalid XML format: temperature tag not found");
+        }
+        start += 13; // length of "<temperature>"
+        size_t end = xml.find("</temperature>", start);
+        if (end == std::string::npos) {
+            throw std::invalid_argument("Invalid XML format: closing temperature tag not found");
+        }
+
+        std::string tempStr = xml.substr(start, end - start);
+        try {
+            return std::stoi(tempStr);
+        }
+        catch (const std::exception&) {
+            throw std::invalid_argument("Invalid temperature value in XML");
+        }
     }
 
 private:
@@ -67,21 +72,37 @@ public:
     JsonWeatherServiceImpl(const JsonWeatherService& service) : jsonService(service) {}
 
     int getTemperature() const override {
-        // TODO: распарсить JSON и вернуть температуру
-        return 0;
+        std::string json = jsonService.getWeatherJson();
+        size_t start = json.find("\"temperature\":");
+        if (start == std::string::npos) {
+            return -1; // или можно бросить исключение
+        }
+        start += 14; // length of "\"temperature\":"
+        size_t end = json.find_first_of(",}", start);
+        if (end == std::string::npos) {
+            return -1;
+        }
+
+        std::string tempStr = json.substr(start, end - start);
+        try {
+            return std::stoi(tempStr);
+        }
+        catch (const std::exception&) {
+            return -1;
+        }
     }
 
 private:
     const JsonWeatherService& jsonService;
 };
 
-// Фасад (должен использовать только интерфейсы!)
+// Фасад
 class WeatherFacade {
 public:
     WeatherFacade(
         std::unique_ptr<IWeatherService> jsonService,
         std::unique_ptr<IWeatherService> xmlService
-    ) : jsonService(std::move(jsonService)), 
+    ) : jsonService(std::move(jsonService)),
         xmlService(std::move(xmlService)) {}
 
     int getJsonTemperature() const {
